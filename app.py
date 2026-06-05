@@ -6,7 +6,31 @@
 from flask import Flask, render_template, send_file, jsonify, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
-import pyaudio
+
+# 解决pyaudio部署问题 - 在云服务器上可能没有pyaudio
+try:
+    import pyaudio
+    PYAVAILABLE = True
+except ImportError:
+    PYAVAILABLE = False
+    print("警告: pyaudio未安装，将使用模拟模式")
+    # 创建虚拟的pyaudio模块避免后续引用错误
+    class MockPaInt16:
+        pass
+    
+    class MockPyAudio:
+        def __init__(self):
+            pass
+        def terminate(self):
+            pass
+        def open(self, **kwargs):
+            return None
+    
+    pyaudio = type('pyaudio', (), {
+        'paInt16': MockPaInt16(),
+        'PyAudio': MockPyAudio
+    })()
+
 import wave
 import threading
 import time
@@ -143,6 +167,11 @@ class AudioMonitorSystem:
 
     def init_pyaudio(self):
         """初始化PyAudio"""
+        if not PYAVAILABLE:
+            logger.warning("PyAudio不可用，将使用模拟模式")
+            self.p = None
+            return
+            
         try:
             self.p = pyaudio.PyAudio()
             logger.info("PyAudio初始化成功")
@@ -339,52 +368,55 @@ class AudioMonitorSystem:
         logger.info(f"初始化了 {len(self.devices)} 个拾音器")
 
     def init_mock_recordings(self):
-        """初始化模拟录音数据 - 每个传感器生成一大段整体录音"""
+        """初始化模拟录音数据 - 减少数据量以提高性能"""
         now = datetime.datetime.now()
         mock_recordings = []
 
-        # 为每个拾音器生成录音数据
+        # 为每个拾音器生成录音数据（只生成最近7天，每天1-2段）
         for device in self.devices.values():
             if device.status == DeviceStatus.OFFLINE:
                 continue
 
-            # 为每个传感器生成最近30天的整体录音（每天一段）
-            for day_offset in range(30):
-                # 每天生成一段整体录音，时长2-6小时
-                start_hour = random.randint(6, 8)  # 开始时间 6-8点
-                start_minute = random.randint(0, 59)
-                start_second = random.randint(0, 59)
+            # 为每个传感器生成最近7天的整体录音（每天1-2段）
+            for day_offset in range(7):  # 从30天改为7天
+                # 每天随机生成1-2段录音
+                segments_per_day = random.randint(1, 2)
+                for _ in range(segments_per_day):
+                    # 录音时间分布在6:00-22:00之间
+                    start_hour = random.randint(6, 22)
+                    start_minute = random.randint(0, 59)
+                    start_second = random.randint(0, 59)
 
-                start_time = now - datetime.timedelta(days=day_offset, hours=24-start_hour, minutes=-start_minute, seconds=-start_second)
-                # 录音时长 2-6小时（秒）
-                duration = random.randint(2 * 3600, 6 * 3600)
-                end_time = start_time + datetime.timedelta(seconds=duration)
+                    start_time = now - datetime.timedelta(days=day_offset, hours=24-start_hour, minutes=-start_minute, seconds=-start_second)
+                    # 录音时长 30分钟-2小时
+                    duration = random.randint(30 * 60, 2 * 3600)
+                    end_time = start_time + datetime.timedelta(seconds=duration)
 
-                # 平均音量 55-85
-                avg_volume = random.randint(55, 85)
-                file_size = int(duration * 32 * 1024)
+                    # 平均音量 55-85
+                    avg_volume = random.randint(55, 85)
+                    file_size = int(duration * 32 * 1024)
 
-                record_id = f"REC_{uuid.uuid4().hex[:8]}"
-                filename = f"{device.id}_{start_time.strftime('%Y%m%d_%H%M%S')}.wav"
-                filepath = str(self.recording_dir / filename)
+                    record_id = f"REC_{uuid.uuid4().hex[:8]}"
+                    filename = f"{device.id}_{start_time.strftime('%Y%m%d_%H%M%S')}.wav"
+                    filepath = str(self.recording_dir / filename)
 
-                mock_recordings.append({
-                    'record_id': record_id,
-                    'device_id': device.id,
-                    'device_name': device.name,
-                    'area_level2': device.area_level2,
-                    'area_level3': device.area_level3,
-                    'area_level4': device.area_level4,
-                    'filename': filename,
-                    'filepath': filepath,
-                    'start_time': start_time.strftime('%Y-%m-%d %H:%M:%S'),
-                    'end_time': end_time.strftime('%Y-%m-%d %H:%M:%S'),
-                    'duration': duration,
-                    'file_size': file_size,
-                    'avg_volume': avg_volume
-                })
+                    mock_recordings.append({
+                        'record_id': record_id,
+                        'device_id': device.id,
+                        'device_name': device.name,
+                        'area_level2': device.area_level2,
+                        'area_level3': device.area_level3,
+                        'area_level4': device.area_level4,
+                        'filename': filename,
+                        'filepath': filepath,
+                        'start_time': start_time.strftime('%Y-%m-%d %H:%M:%S'),
+                        'end_time': end_time.strftime('%Y-%m-%d %H:%M:%S'),
+                        'duration': duration,
+                        'file_size': file_size,
+                        'avg_volume': avg_volume
+                    })
 
-        # 插入数据库
+        # 批量插入数据库
         inserted = 0
         for rec in mock_recordings:
             try:
@@ -602,7 +634,7 @@ class AudioMonitorSystem:
             query += ' AND r.end_time <= ?'
             params.append(end_time)
 
-        query += ' ORDER BY r.start_time DESC'
+        query += ' ORDER BY r.start_time DESC LIMIT 100'
 
         try:
             self.cursor.execute(query, params)
@@ -661,7 +693,7 @@ class AudioMonitorSystem:
             query += ' AND r.end_time <= ?'
             params.append(end_time)
 
-        query += ' ORDER BY r.start_time ASC'
+        query += ' ORDER BY r.start_time ASC LIMIT 200'
 
         try:
             self.cursor.execute(query, params)
@@ -778,8 +810,7 @@ class AudioMonitorSystem:
 
     def get_unbound_devices_by_area(self, level3: str = None, level4: str = None) -> List[Dict]:
         """获取指定区域未绑定的拾音器"""
-        # 收集所有已绑定的设备ID
-        bound_ids = set()
+        # 收集所有已绑定的设备ID        bound_ids = set()
         for binding in self.area_bindings.values():
             bound_ids.update(binding.device_ids)
 
