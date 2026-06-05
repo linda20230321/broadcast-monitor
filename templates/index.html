@@ -865,7 +865,7 @@
                         </select>
                     </div>
                     <div class="history-search-item">
-                        <label>📍 传感器名称</label>
+                        <label>📍 详细位置</label>
                         <select id="historyLevel4">
                             <option value="全部">全部</option>
                         </select>
@@ -909,6 +909,12 @@
                                     <option value="">请选择</option>
                                 </select>
                             </div>
+                            <div class="area-select">
+                                <label>详细位置</label>
+                                <select id="bindLevel4" onchange="onBindLevel4Change()">
+                                    <option value="">请先选择区域名称</option>
+                                </select>
+                            </div>
                         </div>
                         <div id="currentBindingInfo" style="margin-top: 16px; padding: 12px; background: #F5F5F5; border-radius: 8px; display: none;">
                             <div style="font-size: 13px; color: #595959; margin-bottom: 8px;">
@@ -920,6 +926,9 @@
 
                     <div class="binding-panel">
                         <h3>🎙️ 可选传感器 <span class="sensor-count" id="availableCount"></span></h3>
+                        <div class="device-list" id="unboundDeviceList">
+                            <div class="empty-state">请先选择详细位置</div>
+                        </div>
                         <div style="display: flex; gap: 12px; margin-top: 16px;">
                             <button class="bind-btn" id="bindBtn" onclick="bindDevices()" disabled style="flex: 2;">🔗 绑定选中传感器</button>
                             <button class="bind-btn" id="selectAllBtn" onclick="selectAllDevices()" disabled style="flex: 1; background: #52C41A;">✅ 全选</button>
@@ -936,6 +945,7 @@
                         <thead>
                             <tr>
                                 <th style="padding: 14px 12px;">区域名称</th>
+                                <th>详细位置</th>
                                 <th>绑定传感器</th>
                                 <th>操作</th>
                             </tr>
@@ -1174,6 +1184,7 @@
                 loadUnboundDevices();
                 checkExistingBinding();
             } else {
+                document.getElementById('unboundDeviceList').innerHTML = '<div class="empty-state">请先选择详细位置</div>';
                 document.getElementById('bindBtn').disabled = true;
                 document.getElementById('selectAllBtn').disabled = true;
             }
@@ -1460,6 +1471,7 @@
                 <tr>
                     <th>传感器名称</th>
                     <th>区域名称</th>
+                    <th>详细位置</th>
                     <th>录音时间段</th>
                     <th>时长</th>
                     <th>平均音量</th>
