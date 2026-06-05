@@ -166,19 +166,19 @@ class AudioMonitorSystem:
             with open(config_file, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=4, ensure_ascii=False)
 
-def init_pyaudio(self):
-    """初始化PyAudio"""
-    if not PYAVAILABLE:
-        logger.warning("PyAudio不可用，将使用模拟模式")
-        self.p = None
-        return
-        
-    try:
-        self.p = pyaudio.PyAudio()
-        logger.info("PyAudio初始化成功")
-    except Exception as e:
-        logger.warning(f"PyAudio初始化失败: {e}，将使用模拟数据")
-        self.p = None
+    def init_pyaudio(self):
+        """初始化PyAudio"""
+        if not PYAVAILABLE:
+            logger.warning("PyAudio不可用，将使用模拟模式")
+            self.p = None
+            return
+            
+        try:
+            self.p = pyaudio.PyAudio()
+            logger.info("PyAudio初始化成功")
+        except Exception as e:
+            logger.warning(f"PyAudio初始化失败: {e}，将使用模拟数据")
+            self.p = None
 
     def init_database(self):
         """初始化数据库"""
