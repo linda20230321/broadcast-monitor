@@ -7,3 +7,4 @@ gunicorn==20.1.0
 numpy==1.24.3
 setuptools==75.8.0
 wheel==0.45.1
+pyaudio==0.2.11
