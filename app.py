@@ -823,7 +823,7 @@ def handle_disconnect():
 @app.route('/')
 def index():
     """主页"""
-    return render_template('index2.html')
+    return render_template('index.html')
 
 
 @app.route('/api/area/hierarchy')
