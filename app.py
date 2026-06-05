@@ -6,31 +6,7 @@
 from flask import Flask, render_template, send_file, jsonify, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
-
-# 解决pyaudio部署问题 - 在云服务器上可能没有pyaudio
-try:
-    import pyaudio
-    PYAVAILABLE = True
-except ImportError:
-    PYAVAILABLE = False
-    print("警告: pyaudio未安装，将使用模拟模式")
-    # 创建虚拟的pyaudio模块避免后续引用错误
-    class MockPaInt16:
-        pass
-    
-    class MockPyAudio:
-        def __init__(self):
-            pass
-        def terminate(self):
-            pass
-        def open(self, **kwargs):
-            return None
-    
-    pyaudio = type('pyaudio', (), {
-        'paInt16': MockPaInt16(),
-        'PyAudio': MockPyAudio
-    })()
-
+import pyaudio
 import wave
 import threading
 import time
@@ -47,7 +23,6 @@ import random
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 from enum import Enum
-
 
 # 配置日志
 logging.basicConfig(
@@ -168,11 +143,6 @@ class AudioMonitorSystem:
 
     def init_pyaudio(self):
         """初始化PyAudio"""
-        if not PYAVAILABLE:
-            logger.warning("PyAudio不可用，将使用模拟模式")
-            self.p = None
-            return
-            
         try:
             self.p = pyaudio.PyAudio()
             logger.info("PyAudio初始化成功")
@@ -379,7 +349,7 @@ class AudioMonitorSystem:
                 continue
 
             # 为每个传感器生成最近30天的整体录音（每天一段）
-            for day_offset in range(7):
+            for day_offset in range(30):
                 # 每天生成一段整体录音，时长2-6小时
                 start_hour = random.randint(6, 8)  # 开始时间 6-8点
                 start_minute = random.randint(0, 59)
