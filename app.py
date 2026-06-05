@@ -498,7 +498,7 @@ class AudioMonitorSystem:
         return self.area_data
 
     def get_area_bindings(self) -> List[Dict]:
-        """获取区域绑定列表"""
+        """获取区域绑定列表（不包含详细位置level4）"""
         bindings = []
         for binding in self.area_bindings.values():
             device_names = []
@@ -511,7 +511,7 @@ class AudioMonitorSystem:
                 'level1': binding.level1,
                 'level2': binding.level2,
                 'level3': binding.level3,
-                'level4': binding.level4,
+                # 注意：这里不返回level4详细位置
                 'device_ids': binding.device_ids,
                 'device_names': device_names,
                 'device_count': len(binding.device_ids)
@@ -533,7 +533,7 @@ class AudioMonitorSystem:
                 'current_volume': self.device_volumes.get(device.id, 0),
                 'area_level2': device.area_level2,
                 'area_level3': device.area_level3,
-                'area_level4': device.area_level4
+                # 注意：这里不返回area_level4详细位置
             })
         return devices
 
@@ -556,9 +556,9 @@ class AudioMonitorSystem:
             })
         return devices
 
-    def get_recordings_by_area_and_time(self, level3: str = None, level4: str = None,
+    def get_recordings_by_device_and_time(self, device_name: str = None, level3: str = None,
                                          start_time: str = None, end_time: str = None) -> List[Dict]:
-        """根据区域和时间段获取录音 - 每个传感器返回该时间段内的整体录音"""
+        """根据传感器名称、区域名称和时间段获取录音（每个传感器一条整体录音）"""
         query = '''
             SELECT r.*, d.status 
             FROM recordings r
@@ -567,12 +567,15 @@ class AudioMonitorSystem:
         '''
         params = []
 
-        if level3 and level3 != '全部':
-            query += ' AND r.area_level3 = ?'
+        # 按区域名称查询
+        if level3 and level3 != '全部' and level3 != '':
+            query += ' AND d.area_level3 = ?'
             params.append(level3)
-        if level4 and level4 != '全部':
-            query += ' AND r.area_level4 = ?'
-            params.append(level4)
+
+        # 按传感器名称查询
+        if device_name and device_name != '':
+            query += ' AND d.device_name LIKE ?'
+            params.append(f'%{device_name}%')
 
         if start_time:
             query += ' AND r.start_time >= ?'
@@ -599,7 +602,7 @@ class AudioMonitorSystem:
                         'device_name': rec[columns.index('device_name')],
                         'area_level2': rec[columns.index('area_level2')],
                         'area_level3': rec[columns.index('area_level3')],
-                        'area_level4': rec[columns.index('area_level4')],
+                        # 注意：这里不返回area_level4详细位置
                         'start_time': rec[columns.index('start_time')],
                         'end_time': rec[columns.index('end_time')],
                         'duration': rec[columns.index('duration')],
@@ -612,9 +615,9 @@ class AudioMonitorSystem:
             logger.error(f"查询录音失败: {e}")
             return []
 
-    def get_recordings_by_time_range_with_segments(self, level3: str = None, level4: str = None,
+    def get_recordings_by_time_range_with_segments(self, device_name: str = None, level3: str = None,
                                                      start_time: str = None, end_time: str = None) -> List[Dict]:
-        """获取指定时间段内的所有录音片段（用于时间轴显示）"""
+        """获取指定时间段内的所有录音片段（用于时间轴显示）- 按传感器名称和区域名称查询"""
         query = '''
             SELECT r.*, d.status 
             FROM recordings r
@@ -623,12 +626,15 @@ class AudioMonitorSystem:
         '''
         params = []
 
-        if level3 and level3 != '全部':
-            query += ' AND r.area_level3 = ?'
+        # 按区域名称查询
+        if level3 and level3 != '全部' and level3 != '':
+            query += ' AND d.area_level3 = ?'
             params.append(level3)
-        if level4 and level4 != '全部':
-            query += ' AND r.area_level4 = ?'
-            params.append(level4)
+
+        # 按传感器名称查询
+        if device_name and device_name != '':
+            query += ' AND d.device_name LIKE ?'
+            params.append(f'%{device_name}%')
 
         if start_time:
             query += ' AND r.start_time >= ?'
@@ -652,7 +658,7 @@ class AudioMonitorSystem:
                     'device_name': rec[columns.index('device_name')],
                     'area_level2': rec[columns.index('area_level2')],
                     'area_level3': rec[columns.index('area_level3')],
-                    'area_level4': rec[columns.index('area_level4')],
+                    # 注意：这里不返回area_level4详细位置
                     'start_time': rec[columns.index('start_time')],
                     'end_time': rec[columns.index('end_time')],
                     'duration': rec[columns.index('duration')],
@@ -834,7 +840,7 @@ def get_area_hierarchy():
 
 @app.route('/api/area/bindings')
 def get_area_bindings():
-    """获取区域绑定列表"""
+    """获取区域绑定列表（不包含详细位置）"""
     bindings = audio_system.get_area_bindings()
     return jsonify({'success': True, 'data': bindings})
 
@@ -850,7 +856,7 @@ def unbind_area_binding(binding_id):
 
 @app.route('/api/area/devices')
 def get_devices_by_area():
-    """根据区域获取拾音器"""
+    """根据区域获取拾音器（不包含详细位置）"""
     level3 = request.args.get('level3')
     level4 = request.args.get('level4')
     devices = audio_system.get_devices_by_area(level3, level4)
@@ -894,27 +900,27 @@ def get_devices():
     return jsonify({'success': True, 'data': devices})
 
 
-@app.route('/api/recordings/by-area-time')
-def get_recordings_by_area_time():
-    """根据区域和时间段获取录音（每个传感器一条整体录音）"""
+@app.route('/api/recordings/by-device-time')
+def get_recordings_by_device_time():
+    """根据传感器名称、区域名称和时间段获取录音（每个传感器一条整体录音）"""
+    device_name = request.args.get('device_name')
     level3 = request.args.get('level3')
-    level4 = request.args.get('level4')
     start_time = request.args.get('start_time')
     end_time = request.args.get('end_time')
 
-    recordings = audio_system.get_recordings_by_area_and_time(level3, level4, start_time, end_time)
+    recordings = audio_system.get_recordings_by_device_and_time(device_name, level3, start_time, end_time)
     return jsonify({'success': True, 'data': recordings})
 
 
 @app.route('/api/recordings/time-segments')
 def get_recordings_time_segments():
-    """获取时间段内的所有录音片段（用于时间轴）"""
+    """获取时间段内的所有录音片段（用于时间轴）- 按传感器名称和区域名称查询"""
+    device_name = request.args.get('device_name')
     level3 = request.args.get('level3')
-    level4 = request.args.get('level4')
     start_time = request.args.get('start_time')
     end_time = request.args.get('end_time')
 
-    recordings = audio_system.get_recordings_by_time_range_with_segments(level3, level4, start_time, end_time)
+    recordings = audio_system.get_recordings_by_time_range_with_segments(device_name, level3, start_time, end_time)
     return jsonify({'success': True, 'data': recordings})
 
 
