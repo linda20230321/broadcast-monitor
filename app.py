@@ -7,13 +7,29 @@ from flask import Flask, render_template, send_file, jsonify, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 
-# 尝试导入pyaudio，如果失败则使用模拟模式
+# 解决pyaudio导入问题 - 在云服务器上可能没有pyaudio
 try:
     import pyaudio
     PYAVAILABLE = True
 except ImportError:
     PYAVAILABLE = False
     print("警告: pyaudio未安装，将使用模拟模式")
+    # 创建一个虚拟的pyaudio模块
+    class MockPaInt16:
+        pass
+    
+    class MockPyAudio:
+        def __init__(self):
+            pass
+        def terminate(self):
+            pass
+        def open(self, **kwargs):
+            return None
+    
+    pyaudio = type('pyaudio', (), {
+        'paInt16': MockPaInt16(),
+        'PyAudio': MockPyAudio
+    })()
 
 import wave
 import threading
@@ -86,7 +102,7 @@ class AudioMonitorSystem:
 
         # 音频参数
         self.CHUNK = self.config.get('chunk', 1024)
-        self.FORMAT = pyaudio.paInt16 if PYAVAILABLE else 8
+        self.FORMAT = pyaudio.paInt16
         self.CHANNELS = self.config.get('channels', 1)
         self.RATE = self.config.get('sample_rate', 16000)
 
@@ -152,7 +168,8 @@ class AudioMonitorSystem:
     def init_pyaudio(self):
         """初始化PyAudio"""
         if not PYAVAILABLE:
-            logger.warning("PyAudio不可用，将使用模拟数据模式")
+            logger.warning("PyAudio不可用，将使用模拟模式")
+            self.p = None
             return
             
         try:
