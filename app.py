@@ -379,7 +379,7 @@ class AudioMonitorSystem:
                 continue
 
             # 为每个传感器生成最近30天的整体录音（每天一段）
-            for day_offset in range(30):
+            for day_offset in range(7):
                 # 每天生成一段整体录音，时长2-6小时
                 start_hour = random.randint(6, 8)  # 开始时间 6-8点
                 start_minute = random.randint(0, 59)
