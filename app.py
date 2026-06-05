@@ -3,7 +3,7 @@
 功能：音频采集、实时推送、录音存储、历史回放API、区域设备管理
 """
 
-from flask import Flask, render_template, send_file, jsonify, request
+from flask import Flask, render_template, jsonify, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 import threading
@@ -12,12 +12,10 @@ import os
 import sqlite3
 import datetime
 import json
-import numpy as np
-from pathlib import Path
-from queue import Queue
 import uuid
 import logging
 import random
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 from enum import Enum
@@ -74,9 +72,9 @@ class AudioMonitorSystem:
         # 加载配置
         self.load_config()
 
-        # 音频参数
+        # 音频参数（Render 环境使用固定值）
         self.CHUNK = self.config.get('chunk', 1024)
-        self.FORMAT = 8 
+        self.FORMAT = 8  # paInt16 = 8
         self.CHANNELS = self.config.get('channels', 1)
         self.RATE = self.config.get('sample_rate', 16000)
 
@@ -85,7 +83,7 @@ class AudioMonitorSystem:
         self.devices: Dict[str, Device] = {}
         self.area_bindings: Dict[str, AreaBinding] = {}
 
-        # 初始化PyAudio
+        # 初始化PyAudio（Render 环境跳过）
         self.p = None
         self.init_pyaudio()
 
@@ -140,13 +138,9 @@ class AudioMonitorSystem:
                 json.dump(self.config, f, indent=4, ensure_ascii=False)
 
     def init_pyaudio(self):
-        """初始化PyAudio"""
-        try:
-            self.p = pyaudio.PyAudio()
-            logger.info("PyAudio初始化成功")
-        except Exception as e:
-            logger.warning(f"PyAudio初始化失败: {e}，将使用模拟数据")
-            self.p = None
+        """初始化PyAudio - Render 环境跳过"""
+        logger.info("Render 环境：跳过 PyAudio 初始化")
+        self.p = None
 
     def init_database(self):
         """初始化数据库"""
@@ -253,47 +247,31 @@ class AudioMonitorSystem:
         """初始化模拟拾音器 - 每个区域绑定2-3个传感器"""
         device_counter = 1
         devices_config = [
-            # 候车室区域 - A2、A3检票口区域绑定2个传感器
             ("候车室", "A区检票口", "A2、A3检票口", "候车室-A2检票口传感器"),
             ("候车室", "A区检票口", "A2、A3检票口", "候车室-A3检票口传感器"),
-            # 候车室 - A7、A8检票口区域绑定2个传感器
             ("候车室", "A区检票口", "A7、A8检票口", "候车室-A7检票口传感器"),
             ("候车室", "A区检票口", "A7、A8检票口", "候车室-A8检票口传感器"),
-            # 候车室 - A12、A13检票口区域绑定2个传感器
             ("候车室", "A区检票口", "A12、A13检票口", "候车室-A12检票口传感器"),
             ("候车室", "A区检票口", "A12、A13检票口", "候车室-A13检票口传感器"),
-            # 候车室 - B1检票口区域绑定1个传感器
             ("候车室", "B区检票口", "B1检票口", "候车室-B1检票口传感器"),
-            # 候车室 - B5、B6检票口区域绑定2个传感器
             ("候车室", "B区检票口", "B5、B6检票口", "候车室-B5检票口传感器"),
             ("候车室", "B区检票口", "B5、B6检票口", "候车室-B6检票口传感器"),
-            # 候车室 - B14、B15检票口区域绑定2个传感器
             ("候车室", "B区检票口", "B14、B15检票口", "候车室-B14检票口传感器"),
             ("候车室", "B区检票口", "B14、B15检票口", "候车室-B15检票口传感器"),
-            # 出站口 - 北出站大厅绑定2个传感器
             ("出站口", "北出站口", "北出站大厅", "北出站大厅-东侧传感器"),
             ("出站口", "北出站口", "北出站大厅", "北出站大厅-西侧传感器"),
-            # 出站口 - 北出站通道绑定1个传感器
             ("出站口", "北出站口", "北出站通道", "北出站通道传感器"),
-            # 出站口 - 南出站大厅绑定2个传感器
             ("出站口", "南出站口", "南出站大厅", "南出站大厅-东侧传感器"),
             ("出站口", "南出站口", "南出站大厅", "南出站大厅-西侧传感器"),
-            # 出站口 - 东出站大厅绑定1个传感器
             ("出站口", "东出站口", "东出站大厅", "东出站大厅传感器"),
-            # 进站口 - 北进站大厅绑定2个传感器
             ("进站口", "北进站口", "北进站大厅", "北进站大厅-1号通道传感器"),
             ("进站口", "北进站口", "北进站大厅", "北进站大厅-2号通道传感器"),
-            # 进站口 - 北安检区绑定1个传感器
             ("进站口", "北进站口", "北安检区", "北安检区传感器"),
-            # 进站口 - 南进站大厅绑定2个传感器
             ("进站口", "南进站口", "南进站大厅", "南进站大厅-1号通道传感器"),
             ("进站口", "南进站口", "南进站大厅", "南进站大厅-2号通道传感器"),
-            # 进站口 - 西进站大厅绑定1个传感器
             ("进站口", "西进站口", "西进站大厅", "西进站大厅传感器"),
-            # 换乘大厅 - 地铁换乘通道绑定2个传感器
             ("换乘大厅", "地铁换乘区", "地铁换乘通道", "地铁换乘通道-北侧传感器"),
             ("换乘大厅", "地铁换乘区", "地铁换乘通道", "地铁换乘通道-南侧传感器"),
-            # 换乘大厅 - 地铁换乘大厅绑定2个传感器
             ("换乘大厅", "地铁换乘区", "地铁换乘大厅", "地铁换乘大厅-中央传感器"),
             ("换乘大厅", "地铁换乘区", "地铁换乘大厅", "地铁换乘大厅-出口传感器"),
         ]
@@ -301,7 +279,6 @@ class AudioMonitorSystem:
         for level2, level3, level4, device_name in devices_config:
             device_id = f"MIC_{device_counter:03d}"
 
-            # 随机状态（大部分在线）
             status_choice = [DeviceStatus.ONLINE] * 8 + [DeviceStatus.OFFLINE, DeviceStatus.ALERT]
             status = status_choice[device_counter % len(status_choice)]
 
@@ -319,9 +296,8 @@ class AudioMonitorSystem:
             )
 
             self.devices[device_id] = device
-            self.device_volumes[device_id] = 0  # 默认音量为0
+            self.device_volumes[device_id] = 0
 
-            # 保存到数据库
             self.cursor.execute('''
                 INSERT INTO devices 
                 (device_id, device_name, station, area_level2, area_level3, area_level4, 
@@ -341,24 +317,19 @@ class AudioMonitorSystem:
         now = datetime.datetime.now()
         mock_recordings = []
 
-        # 为每个拾音器生成录音数据
         for device in self.devices.values():
             if device.status == DeviceStatus.OFFLINE:
                 continue
 
-            # 为每个传感器生成最近30天的整体录音（每天一段）
             for day_offset in range(30):
-                # 每天生成一段整体录音，时长2-6小时
-                start_hour = random.randint(6, 8)  # 开始时间 6-8点
+                start_hour = random.randint(6, 8)
                 start_minute = random.randint(0, 59)
                 start_second = random.randint(0, 59)
 
                 start_time = now - datetime.timedelta(days=day_offset, hours=24-start_hour, minutes=-start_minute, seconds=-start_second)
-                # 录音时长 2-6小时（秒）
                 duration = random.randint(2 * 3600, 6 * 3600)
                 end_time = start_time + datetime.timedelta(seconds=duration)
 
-                # 平均音量 55-85
                 avg_volume = random.randint(55, 85)
                 file_size = int(duration * 32 * 1024)
 
@@ -382,7 +353,6 @@ class AudioMonitorSystem:
                     'avg_volume': avg_volume
                 })
 
-        # 插入数据库
         inserted = 0
         for rec in mock_recordings:
             try:
@@ -407,26 +377,21 @@ class AudioMonitorSystem:
         bindings_created = 0
         self.area_bindings.clear()
 
-        # 手动配置每个区域绑定的传感器
         bindings_config = [
-            # 候车室区域
             ("重庆东站", "候车室", "A区检票口", "A2、A3检票口", ["MIC_001", "MIC_002"]),
             ("重庆东站", "候车室", "A区检票口", "A7、A8检票口", ["MIC_003", "MIC_004"]),
             ("重庆东站", "候车室", "A区检票口", "A12、A13检票口", ["MIC_005", "MIC_006"]),
             ("重庆东站", "候车室", "B区检票口", "B1检票口", ["MIC_007"]),
             ("重庆东站", "候车室", "B区检票口", "B5、B6检票口", ["MIC_008", "MIC_009"]),
             ("重庆东站", "候车室", "B区检票口", "B14、B15检票口", ["MIC_010", "MIC_011"]),
-            # 出站口区域
             ("重庆东站", "出站口", "北出站口", "北出站大厅", ["MIC_012", "MIC_013"]),
             ("重庆东站", "出站口", "北出站口", "北出站通道", ["MIC_014"]),
             ("重庆东站", "出站口", "南出站口", "南出站大厅", ["MIC_015", "MIC_016"]),
             ("重庆东站", "出站口", "东出站口", "东出站大厅", ["MIC_017"]),
-            # 进站口区域
             ("重庆东站", "进站口", "北进站口", "北进站大厅", ["MIC_018", "MIC_019"]),
             ("重庆东站", "进站口", "北进站口", "北安检区", ["MIC_020"]),
             ("重庆东站", "进站口", "南进站口", "南进站大厅", ["MIC_021", "MIC_022"]),
             ("重庆东站", "进站口", "西进站口", "西进站大厅", ["MIC_023"]),
-            # 换乘大厅区域
             ("重庆东站", "换乘大厅", "地铁换乘区", "地铁换乘通道", ["MIC_024", "MIC_025"]),
             ("重庆东站", "换乘大厅", "地铁换乘区", "地铁换乘大厅", ["MIC_026", "MIC_027"]),
         ]
@@ -451,16 +416,15 @@ class AudioMonitorSystem:
             bindings_created += 1
 
         self.conn.commit()
-        logger.info(f"初始化了 {bindings_created} 个区域绑定，每个区域绑定2-3个传感器")
+        logger.info(f"初始化了 {bindings_created} 个区域绑定")
 
     def start_alert_monitor(self):
         """启动告警监测"""
         def monitor():
             while True:
                 for device_id, device in self.devices.items():
-                    # 只对在线设备监测
                     if device.status == DeviceStatus.ONLINE:
-                        if random.random() < 0.005:  # 0.5%的概率变化
+                        if random.random() < 0.005:
                             if random.random() < 0.3:
                                 device.status = DeviceStatus.ALERT
                                 self.update_device_status(device_id, DeviceStatus.ALERT)
@@ -487,16 +451,13 @@ class AudioMonitorSystem:
                     'device_id': device_id,
                     'status': status.value
                 })
-                logger.info(f"设备 {device_id} 状态变更为 {status.value}")
         except Exception as e:
             logger.error(f"更新设备状态失败: {e}")
 
     def get_area_hierarchy(self) -> Dict:
-        """获取区域层级"""
         return self.area_data
 
     def get_area_bindings(self) -> List[Dict]:
-        """获取区域绑定列表"""
         bindings = []
         for binding in self.area_bindings.values():
             device_names = []
@@ -517,7 +478,6 @@ class AudioMonitorSystem:
         return bindings
 
     def get_devices_by_area(self, level3: str = None, level4: str = None) -> List[Dict]:
-        """根据区域获取拾音器列表"""
         devices = []
         for device in self.devices.values():
             if level3 and device.area_level3 != level3:
@@ -536,7 +496,6 @@ class AudioMonitorSystem:
         return devices
 
     def get_devices(self) -> List[Dict]:
-        """获取所有拾音器"""
         devices = []
         for device in self.devices.values():
             devices.append({
@@ -556,7 +515,6 @@ class AudioMonitorSystem:
 
     def get_recordings_by_area_and_time(self, level3: str = None, level4: str = None,
                                          start_time: str = None, end_time: str = None) -> List[Dict]:
-        """根据区域和时间段获取录音 - 每个传感器返回该时间段内的整体录音"""
         query = '''
             SELECT r.*, d.status 
             FROM recordings r
@@ -586,7 +544,6 @@ class AudioMonitorSystem:
             records = self.cursor.fetchall()
             columns = [description[0] for description in self.cursor.description]
 
-            # 每个传感器只返回最新的一条录音（整体录音）
             device_record_map = {}
             for rec in records:
                 device_id = rec[columns.index('device_id')]
@@ -612,7 +569,6 @@ class AudioMonitorSystem:
 
     def get_recordings_by_time_range_with_segments(self, level3: str = None, level4: str = None,
                                                      start_time: str = None, end_time: str = None) -> List[Dict]:
-        """获取指定时间段内的所有录音片段（用于时间轴显示）"""
         query = '''
             SELECT r.*, d.status 
             FROM recordings r
@@ -663,10 +619,8 @@ class AudioMonitorSystem:
             return []
 
     def bind_area_device(self, level3: str, level4: str, device_ids: List[str]) -> bool:
-        """绑定区域和拾音器"""
         try:
             station = "重庆东站"
-            # 找到对应的level2
             level2 = None
             for l2, l3_map in self.area_data[station].items():
                 if level3 in l3_map:
@@ -674,12 +628,10 @@ class AudioMonitorSystem:
                     break
 
             if not level2:
-                logger.error(f"未找到区域: {level3}")
                 return False
 
             binding_id = f"BIND_{station}_{level2}_{level3}_{level4}".replace(" ", "_")
 
-            # 更新数据库
             self.cursor.execute('''
                 INSERT OR REPLACE INTO area_bindings 
                 (id, level1, level2, level3, level4, device_ids)
@@ -687,7 +639,6 @@ class AudioMonitorSystem:
             ''', (binding_id, station, level2, level3, level4, json.dumps(device_ids)))
             self.conn.commit()
 
-            # 更新内存
             if binding_id in self.area_bindings:
                 self.area_bindings[binding_id].device_ids = device_ids
             else:
@@ -700,37 +651,29 @@ class AudioMonitorSystem:
                     device_ids=device_ids
                 )
 
-            logger.info(f"绑定成功: {level3} > {level4}, 绑定 {len(device_ids)} 个设备")
             return True
         except Exception as e:
             logger.error(f"绑定失败: {e}")
             return False
 
     def unbind_area_device(self, binding_id: str) -> bool:
-        """解除区域绑定"""
         try:
-            # 从数据库中删除
             self.cursor.execute('DELETE FROM area_bindings WHERE id = ?', (binding_id,))
             self.conn.commit()
 
-            # 从内存中删除
             if binding_id in self.area_bindings:
                 del self.area_bindings[binding_id]
 
-            logger.info(f"解绑成功: {binding_id}")
             return True
         except Exception as e:
             logger.error(f"解绑失败: {e}")
             return False
 
     def get_unbound_devices_by_area(self, level3: str = None, level4: str = None) -> List[Dict]:
-        """获取指定区域未绑定的拾音器"""
-        # 收集所有已绑定的设备ID
         bound_ids = set()
         for binding in self.area_bindings.values():
             bound_ids.update(binding.device_ids)
 
-        # 筛选指定区域未绑定的设备
         unbound = []
         for device in self.devices.values():
             if device.id not in bound_ids:
@@ -750,13 +693,10 @@ class AudioMonitorSystem:
         return unbound
 
     def get_unbound_devices(self) -> List[Dict]:
-        """获取所有未绑定的拾音器"""
-        # 收集所有已绑定的设备ID
         bound_ids = set()
         for binding in self.area_bindings.values():
             bound_ids.update(binding.device_ids)
 
-        # 筛选未绑定的设备
         unbound = []
         for device in self.devices.values():
             if device.id not in bound_ids:
@@ -772,7 +712,6 @@ class AudioMonitorSystem:
         return unbound
 
     def get_statistics(self) -> Dict:
-        """获取统计信息"""
         devices = self.get_devices()
         online_count = len([d for d in devices if d['status'] == 'online'])
         offline_count = len([d for d in devices if d['status'] == 'offline'])
@@ -786,15 +725,13 @@ class AudioMonitorSystem:
         }
 
     def start(self):
-        """启动系统"""
         self.is_recording = True
         logger.info("系统已启动")
 
     def stop(self):
-        """停止系统"""
         self.is_recording = False
         if self.p:
-            self.p.terminate()
+            self.p = None
         self.conn.close()
         logger.info("系统已停止")
 
@@ -820,26 +757,22 @@ def handle_disconnect():
 # REST API路由
 @app.route('/')
 def index():
-    """主页"""
     return render_template('index.html')
 
 
 @app.route('/api/area/hierarchy')
 def get_area_hierarchy():
-    """获取区域层级"""
     return jsonify({'success': True, 'data': audio_system.get_area_hierarchy()})
 
 
 @app.route('/api/area/bindings')
 def get_area_bindings():
-    """获取区域绑定列表"""
     bindings = audio_system.get_area_bindings()
     return jsonify({'success': True, 'data': bindings})
 
 
 @app.route('/api/area/bindings/<binding_id>', methods=['DELETE'])
 def unbind_area_binding(binding_id):
-    """解除区域绑定"""
     success = audio_system.unbind_area_device(binding_id)
     if success:
         return jsonify({'success': True})
@@ -848,7 +781,6 @@ def unbind_area_binding(binding_id):
 
 @app.route('/api/area/devices')
 def get_devices_by_area():
-    """根据区域获取拾音器"""
     level3 = request.args.get('level3')
     level4 = request.args.get('level4')
     devices = audio_system.get_devices_by_area(level3, level4)
@@ -857,7 +789,6 @@ def get_devices_by_area():
 
 @app.route('/api/area/bind', methods=['POST'])
 def bind_area_device():
-    """绑定区域和拾音器"""
     data = request.json
     success = audio_system.bind_area_device(
         data.get('level3'),
@@ -871,14 +802,12 @@ def bind_area_device():
 
 @app.route('/api/devices/unbound')
 def get_unbound_devices():
-    """获取所有未绑定的拾音器"""
     devices = audio_system.get_unbound_devices()
     return jsonify({'success': True, 'data': devices})
 
 
 @app.route('/api/devices/unbound/by-area')
 def get_unbound_devices_by_area():
-    """根据区域获取未绑定的拾音器"""
     level3 = request.args.get('level3')
     level4 = request.args.get('level4')
     devices = audio_system.get_unbound_devices_by_area(level3, level4)
@@ -887,14 +816,12 @@ def get_unbound_devices_by_area():
 
 @app.route('/api/devices')
 def get_devices():
-    """获取所有拾音器"""
     devices = audio_system.get_devices()
     return jsonify({'success': True, 'data': devices})
 
 
 @app.route('/api/recordings/by-area-time')
 def get_recordings_by_area_time():
-    """根据区域和时间段获取录音（每个传感器一条整体录音）"""
     level3 = request.args.get('level3')
     level4 = request.args.get('level4')
     start_time = request.args.get('start_time')
@@ -906,7 +833,6 @@ def get_recordings_by_area_time():
 
 @app.route('/api/recordings/time-segments')
 def get_recordings_time_segments():
-    """获取时间段内的所有录音片段（用于时间轴）"""
     level3 = request.args.get('level3')
     level4 = request.args.get('level4')
     start_time = request.args.get('start_time')
@@ -918,11 +844,11 @@ def get_recordings_time_segments():
 
 @app.route('/api/statistics')
 def get_statistics():
-    """获取统计信息"""
     stats = audio_system.get_statistics()
     return jsonify({'success': True, 'data': stats})
 
 
 if __name__ == '__main__':
     audio_system.start()
-    socketio.run(app, host='0.0.0.0', port=5003, debug=False, allow_unsafe_werkzeug=True)
+    port = int(os.environ.get('PORT', 5003))
+    socketio.run(app, host='0.0.0.0', port=port, debug=False)
