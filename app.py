@@ -526,26 +526,44 @@ class AudioMonitorSystem:
         """获取区域层级"""
         return self.area_data
 
-    def get_area_bindings(self) -> List[Dict]:
-        """获取区域绑定列表（不包含详细位置level4）"""
-        bindings = []
-        for binding in self.area_bindings.values():
-            device_names = []
-            for device_id in binding.device_ids:
-                if device_id in self.devices:
-                    device_names.append(self.devices[device_id].name)
-
-            bindings.append({
-                'id': binding.id,
+   def get_area_bindings(self) -> List[Dict]:
+    """获取区域绑定列表 - 按level3合并，一个区域只显示一行"""
+    # 先按 level3 分组
+    grouped_bindings = {}
+    
+    for binding in self.area_bindings.values():
+        level3 = binding.level3
+        
+        if level3 not in grouped_bindings:
+            grouped_bindings[level3] = {
                 'level1': binding.level1,
                 'level2': binding.level2,
-                'level3': binding.level3,
-                # 注意：这里不返回level4详细位置
-                'device_ids': binding.device_ids,
-                'device_names': device_names,
-                'device_count': len(binding.device_ids)
-            })
-        return bindings
+                'level3': level3,
+                'all_device_ids': [],
+                'all_device_names': []
+            }
+        
+        # 合并该 level3 下所有 level4 的设备
+        for device_id in binding.device_ids:
+            if device_id not in grouped_bindings[level3]['all_device_ids']:
+                grouped_bindings[level3]['all_device_ids'].append(device_id)
+                if device_id in self.devices:
+                    grouped_bindings[level3]['all_device_names'].append(self.devices[device_id].name)
+    
+    # 转换为列表返回
+    bindings = []
+    for level3, data in grouped_bindings.items():
+        bindings.append({
+            'id': f"BIND_{data['level1']}_{data['level2']}_{level3}".replace(" ", "_"),
+            'level1': data['level1'],
+            'level2': data['level2'],
+            'level3': level3,
+            'device_ids': data['all_device_ids'],
+            'device_names': data['all_device_names'],
+            'device_count': len(data['all_device_ids'])
+        })
+    
+    return bindings
 
     def get_devices_by_area(self, level3: str = None, level4: str = None) -> List[Dict]:
         """根据区域获取拾音器列表"""
@@ -699,49 +717,62 @@ class AudioMonitorSystem:
             logger.error(f"查询录音片段失败: {e}")
             return []
 
-    def bind_area_device(self, level3: str, level4: str, device_ids: List[str]) -> bool:
-        """绑定区域和拾音器"""
-        try:
-            station = "重庆东站"
-            # 找到对应的level2
-            level2 = None
-            for l2, l3_map in self.area_data[station].items():
-                if level3 in l3_map:
-                    level2 = l2
-                    break
+   def bind_area_device(self, level3: str, level4: str, device_ids: List[str]) -> bool:
+    """绑定区域和拾音器 - 按level3存储，合并同一level3下的所有设备"""
+    try:
+        station = "重庆东站"
+        # 找到对应的level2
+        level2 = None
+        for l2, l3_map in self.area_data[station].items():
+            if level3 in l3_map:
+                level2 = l2
+                break
 
-            if not level2:
-                logger.error(f"未找到区域: {level3}")
-                return False
-
-            binding_id = f"BIND_{station}_{level2}_{level3}_{level4}".replace(" ", "_")
-
-            # 更新数据库
-            self.cursor.execute('''
-                INSERT OR REPLACE INTO area_bindings 
-                (id, level1, level2, level3, level4, device_ids)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (binding_id, station, level2, level3, level4, json.dumps(device_ids)))
-            self.conn.commit()
-
-            # 更新内存
-            if binding_id in self.area_bindings:
-                self.area_bindings[binding_id].device_ids = device_ids
-            else:
-                self.area_bindings[binding_id] = AreaBinding(
-                    id=binding_id,
-                    level1=station,
-                    level2=level2,
-                    level3=level3,
-                    level4=level4,
-                    device_ids=device_ids
-                )
-
-            logger.info(f"绑定成功: {level3} > {level4}, 绑定 {len(device_ids)} 个设备")
-            return True
-        except Exception as e:
-            logger.error(f"绑定失败: {e}")
+        if not level2:
+            logger.error(f"未找到区域: {level3}")
             return False
+
+        # 获取该 level3 下已有的所有设备
+        existing_device_ids = []
+        for binding in self.area_bindings.values():
+            if binding.level3 == level3:
+                existing_device_ids.extend(binding.device_ids)
+        
+        # 合并新旧设备（去重）
+        all_device_ids = list(set(existing_device_ids + device_ids))
+        
+        # 使用一个统一的 binding_id（基于 level3）
+        binding_id = f"BIND_{station}_{level2}_{level3}".replace(" ", "_")
+        
+        # 删除该 level3 下的所有旧绑定
+        to_delete = [bid for bid, b in self.area_bindings.items() if b.level3 == level3]
+        for bid in to_delete:
+            del self.area_bindings[bid]
+            self.cursor.execute('DELETE FROM area_bindings WHERE id = ?', (bid,))
+        
+        # 创建新的绑定记录（合并所有设备）
+        binding = AreaBinding(
+            id=binding_id,
+            level1=station,
+            level2=level2,
+            level3=level3,
+            level4='',  # level4 设为空，表示整个区域
+            device_ids=all_device_ids
+        )
+        self.area_bindings[binding_id] = binding
+
+        self.cursor.execute('''
+            INSERT OR REPLACE INTO area_bindings 
+            (id, level1, level2, level3, level4, device_ids)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (binding_id, station, level2, level3, '', json.dumps(all_device_ids)))
+        
+        self.conn.commit()
+        logger.info(f"绑定成功: {level3}, 共 {len(all_device_ids)} 个设备")
+        return True
+    except Exception as e:
+        logger.error(f"绑定失败: {e}")
+        return False
 
     def unbind_area_device(self, binding_id: str) -> bool:
         """解除区域绑定"""
