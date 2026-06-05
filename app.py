@@ -76,7 +76,7 @@ class AudioMonitorSystem:
 
         # 音频参数
         self.CHUNK = self.config.get('chunk', 1024)
-        self.FORMAT = pyaudio.paInt16
+        self.FORMAT = 8 
         self.CHANNELS = self.config.get('channels', 1)
         self.RATE = self.config.get('sample_rate', 16000)
 
