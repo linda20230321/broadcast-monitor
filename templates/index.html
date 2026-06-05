@@ -855,20 +855,18 @@
                 <div class="device-grid" id="deviceGrid"></div>
             </div>
 
-            <!-- 历史回放页面 -->
+            <!-- 历史回放页面 - 增加区域名称查询 -->
             <div class="page-container" id="historyPage">
                 <div class="history-search-row">
                     <div class="history-search-item">
                         <label>🏢 区域名称</label>
-                        <select id="historyLevel3" onchange="onHistoryLevel3Change()">
-                            <option value="全部">全部</option>
+                        <select id="historyLevel3">
+                            <option value="">全部</option>
                         </select>
                     </div>
                     <div class="history-search-item">
-                        <label>📍 详细位置</label>
-                        <select id="historyLevel4">
-                            <option value="全部">全部</option>
-                        </select>
+                        <label>🎤 传感器名称</label>
+                        <input type="text" id="historyDeviceName" placeholder="请输入传感器名称">
                     </div>
                     <div class="history-search-item">
                         <label>📅 开始时间</label>
@@ -909,12 +907,6 @@
                                     <option value="">请选择</option>
                                 </select>
                             </div>
-                            <div class="area-select">
-                                <label>详细位置</label>
-                                <select id="bindLevel4" onchange="onBindLevel4Change()">
-                                    <option value="">请先选择区域名称</option>
-                                </select>
-                            </div>
                         </div>
                         <div id="currentBindingInfo" style="margin-top: 16px; padding: 12px; background: #F5F5F5; border-radius: 8px; display: none;">
                             <div style="font-size: 13px; color: #595959; margin-bottom: 8px;">
@@ -927,7 +919,7 @@
                     <div class="binding-panel">
                         <h3>🎙️ 可选传感器 <span class="sensor-count" id="availableCount"></span></h3>
                         <div class="device-list" id="unboundDeviceList">
-                            <div class="empty-state">请先选择详细位置</div>
+                            <div class="empty-state">请先选择区域名称</div>
                         </div>
                         <div style="display: flex; gap: 12px; margin-top: 16px;">
                             <button class="bind-btn" id="bindBtn" onclick="bindDevices()" disabled style="flex: 2;">🔗 绑定选中传感器</button>
@@ -945,13 +937,12 @@
                         <thead>
                             <tr>
                                 <th style="padding: 14px 12px;">区域名称</th>
-                                <th>详细位置</th>
                                 <th>绑定传感器</th>
                                 <th>操作</th>
                             </tr>
                         </thead>
                         <tbody id="bindingListBody">
-                            <tr><td colspan="4" class="empty-state">暂无绑定数据</td></tr>
+                            <tr><td colspan="3" class="empty-state">暂无绑定数据</td>\n                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -1008,7 +999,7 @@
         let currentStartTime = '';
         let currentEndTime = '';
         let selectedUnboundDevices = new Set();
-        let currentBindLevel3 = '', currentBindLevel4 = '';
+        let currentBindLevel3 = '';
         let volumeIntervals = new Map();
 
         // ========== 初始化 ==========
@@ -1065,7 +1056,7 @@
             document.getElementById(`${page}Page`).classList.add('active');
             
             if (page === 'history') {
-                loadHistoryOptions();
+                loadHistoryAreaOptions();
                 const now = new Date();
                 const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
                 document.getElementById('historyStartTime').value = formatDateTimeLocal(sevenDaysAgo);
@@ -1099,9 +1090,9 @@
             }
         }
 
-        function loadHistoryOptions() {
+        function loadHistoryAreaOptions() {
             const level3Select = document.getElementById('historyLevel3');
-            let options = '<option value="全部">全部</option>';
+            let options = '<option value="">全部</option>';
             
             if (areaHierarchy['重庆东站']) {
                 for (let level2 in areaHierarchy['重庆东站']) {
@@ -1127,66 +1118,18 @@
             level3Select.innerHTML = options;
         }
 
-        function onHistoryLevel3Change() {
-            const level3 = document.getElementById('historyLevel3').value;
-            const level4Select = document.getElementById('historyLevel4');
-            
-            let options = '<option value="全部">全部</option>';
-            
-            if (level3 && level3 !== '全部' && areaHierarchy['重庆东站']) {
-                for (let level2 in areaHierarchy['重庆东站']) {
-                    if (areaHierarchy['重庆东站'][level2][level3]) {
-                        const level4List = areaHierarchy['重庆东站'][level2][level3];
-                        for (let level4 of level4List) {
-                            options += `<option value="${level4}">${level4}</option>`;
-                        }
-                        break;
-                    }
-                }
-            }
-            level4Select.innerHTML = options;
-        }
-
         function onBindLevel3Change() {
             const level3 = document.getElementById('bindLevel3').value;
-            const level4Select = document.getElementById('bindLevel4');
-            
             currentBindLevel3 = level3;
             
-            let options = '<option value="">请选择</option>';
-            
-            if (level3 && areaHierarchy['重庆东站']) {
-                for (let level2 in areaHierarchy['重庆东站']) {
-                    if (areaHierarchy['重庆东站'][level2][level3]) {
-                        const level4List = areaHierarchy['重庆东站'][level2][level3];
-                        for (let level4 of level4List) {
-                            options += `<option value="${level4}">${level4}</option>`;
-                        }
-                        break;
-                    }
-                }
-                level4Select.innerHTML = options;
-                level4Select.disabled = false;
-            } else {
-                level4Select.innerHTML = '<option value="">请先选择区域名称</option>';
-                level4Select.disabled = true;
-            }
-            
-            document.getElementById('currentBindingInfo').style.display = 'none';
-            document.getElementById('bindBtn').disabled = true;
-            document.getElementById('selectAllBtn').disabled = true;
-            selectedUnboundDevices.clear();
-        }
-
-        function onBindLevel4Change() {
-            currentBindLevel4 = document.getElementById('bindLevel4').value;
-            if (currentBindLevel4) {
+            if (level3) {
                 loadUnboundDevices();
                 checkExistingBinding();
             } else {
-                document.getElementById('unboundDeviceList').innerHTML = '<div class="empty-state">请先选择详细位置</div>';
+                document.getElementById('unboundDeviceList').innerHTML = '<div class="empty-state">请先选择区域名称</div>';
                 document.getElementById('bindBtn').disabled = true;
                 document.getElementById('selectAllBtn').disabled = true;
+                document.getElementById('currentBindingInfo').style.display = 'none';
             }
             selectedUnboundDevices.clear();
         }
@@ -1196,10 +1139,7 @@
                 const response = await fetch('/api/area/bindings');
                 const result = await response.json();
                 if (result.success) {
-                    const existing = result.data.find(b => 
-                        b.level3 === currentBindLevel3 && 
-                        b.level4 === currentBindLevel4
-                    );
+                    const existing = result.data.find(b => b.level3 === currentBindLevel3);
                     
                     if (existing) {
                         document.getElementById('currentBindingInfo').style.display = 'block';
@@ -1218,10 +1158,10 @@
         }
 
         async function loadUnboundDevices() {
-            if (!currentBindLevel4) return;
+            if (!currentBindLevel3) return;
             
             try {
-                const response = await fetch(`/api/devices/unbound/by-area?level3=${encodeURIComponent(currentBindLevel3)}&level4=${encodeURIComponent(currentBindLevel4)}`);
+                const response = await fetch(`/api/devices/unbound/by-area?level3=${encodeURIComponent(currentBindLevel3)}`);
                 const result = await response.json();
                 if (result.success) {
                     renderUnboundDeviceList(result.data);
@@ -1246,7 +1186,7 @@
                     <input type="checkbox" class="device-checkbox" id="chk_${device.id}" onchange="event.stopPropagation(); toggleDeviceSelection('${device.id}')">
                     <div class="device-item-info">
                         <div class="device-item-name">${escapeHtml(device.name)}</div>
-                        <div class="device-item-location">${device.area_level2} · ${device.area_level3} · ${device.area_level4}</div>
+                        <div class="device-item-location">${device.area_level2} · ${device.area_level3}</div>
                     </div>
                     <span class="status-tag ${device.status}">${getStatusText(device.status)}</span>
                 </div>
@@ -1291,8 +1231,8 @@
         }
 
         async function bindDevices() {
-            if (!currentBindLevel4) {
-                alert('请先选择完整的区域');
+            if (!currentBindLevel3) {
+                alert('请先选择区域名称');
                 return;
             }
             
@@ -1307,7 +1247,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         level3: currentBindLevel3,
-                        level4: currentBindLevel4,
+                        level4: '',
                         device_ids: Array.from(selectedUnboundDevices)
                     })
                 });
@@ -1341,7 +1281,7 @@
                     alert('解绑成功');
                     loadBindings();
                     loadDevices();
-                    if (currentBindLevel4) {
+                    if (currentBindLevel3) {
                         loadUnboundDevices();
                         checkExistingBinding();
                     }
@@ -1368,7 +1308,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         level3: binding.level3,
-                        level4: binding.level4,
+                        level4: '',
                         device_ids: newDeviceIds
                     })
                 });
@@ -1378,7 +1318,7 @@
                     alert(`已移除传感器 "${deviceName}"`);
                     loadBindings();
                     loadDevices();
-                    if (currentBindLevel4 === binding.level4) {
+                    if (currentBindLevel3 === binding.level3) {
                         loadUnboundDevices();
                         checkExistingBinding();
                     }
@@ -1396,8 +1336,8 @@
             const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
             document.getElementById('historyStartTime').value = formatDateTimeLocal(sevenDaysAgo);
             document.getElementById('historyEndTime').value = formatDateTimeLocal(now);
-            document.getElementById('historyLevel3').value = '全部';
-            document.getElementById('historyLevel4').innerHTML = '<option value="全部">全部</option>';
+            document.getElementById('historyLevel3').value = '';
+            document.getElementById('historyDeviceName').value = '';
             searchHistoryRecordings();
         }
 
@@ -1418,7 +1358,7 @@
 
         async function searchHistoryRecordings() {
             const level3 = document.getElementById('historyLevel3').value;
-            const level4 = document.getElementById('historyLevel4').value;
+            const deviceName = document.getElementById('historyDeviceName').value;
             const startTime = document.getElementById('historyStartTime').value;
             const endTime = document.getElementById('historyEndTime').value;
             
@@ -1428,9 +1368,9 @@
             }
             
             if (currentHistoryView === 'table') {
-                let url = `/api/recordings/by-area-time?limit=10&start_time=${startTime}&end_time=${endTime}`;
-                if (level3 && level3 !== '全部') url += `&level3=${encodeURIComponent(level3)}`;
-                if (level4 && level4 !== '全部') url += `&level4=${encodeURIComponent(level4)}`;
+                let url = `/api/recordings/by-device-time?limit=10&start_time=${startTime}&end_time=${endTime}`;
+                if (level3) url += `&level3=${encodeURIComponent(level3)}`;
+                if (deviceName) url += `&device_name=${encodeURIComponent(deviceName)}`;
                 
                 try {
                     const response = await fetch(url);
@@ -1443,8 +1383,8 @@
                 }
             } else {
                 let url = `/api/recordings/time-segments?start_time=${startTime}&end_time=${endTime}`;
-                if (level3 && level3 !== '全部') url += `&level3=${encodeURIComponent(level3)}`;
-                if (level4 && level4 !== '全部') url += `&level4=${encodeURIComponent(level4)}`;
+                if (level3) url += `&level3=${encodeURIComponent(level3)}`;
+                if (deviceName) url += `&device_name=${encodeURIComponent(deviceName)}`;
                 
                 try {
                     const response = await fetch(url);
@@ -1458,52 +1398,50 @@
             }
         }
 
-      function renderHistoryTable(recordings) {
-    const container = document.getElementById('historyTableView');
-    if (!recordings.length) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div>所选时间段内暂无录音数据</div></div>';
-        return;
-    }
-    
-    container.innerHTML = `
-        <table class="recording-table">
-            <thead>
-                <tr>
-                    <th>传感器名称</th>
-                    <th>区域名称</th>
-                    <th>详细位置</th>
-                    <th>录音时间段</th>
-                    <th>时长</th>
-                    <th>平均音量</th>
-                    <th>状态</th>
-                    <th>操作</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${recordings.map(rec => `
-                    <tr>
-                        <td><strong>${escapeHtml(rec.device_name)}</strong><br><span style="font-size:11px;color:#8C8C8C;">${rec.device_id}</span></td>
-                        <td>${escapeHtml(rec.area_level3)}</td>
-                        <td>${escapeHtml(rec.area_level4 || '-')}</td>
-                        <td>${formatDateTime(rec.start_time)}<br><span style="font-size:11px;color:#8C8C8C;">至 ${formatTimeOnly(rec.end_time)}</span></td>
-                        <td>${formatDuration(rec.duration)}</td>
-                        <td>
-                            <div style="display: flex; align-items: center;">
-                                <div class="volume-mini-bar"><div style="width: ${Math.round(rec.avg_volume)}%; height: 100%; background: #52C41A;"></div></div>
-                                <span>${Math.round(rec.avg_volume)}</span>
-                            </div>
-                        </td>
-                        <td><span class="status-tag ${rec.status}">${getStatusText(rec.status)}</span></td>
-                        <td>
-                            <button class="recording-play-btn" onclick="playHistoryRecording('${rec.record_id}', '${escapeHtml(rec.device_name)}', '${rec.start_time}', ${rec.duration})">▶</button>
-                            <button class="recording-download-btn" onclick="downloadRecording('${rec.record_id}')">📥</button>
-                        </td>
-                    </tr>
-                `).join('')}
-            </tbody>
-        </table>
-    `;
-}
+        function renderHistoryTable(recordings) {
+            const container = document.getElementById('historyTableView');
+            if (!recordings.length) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div>所选时间段内暂无录音数据</div></div>';
+                return;
+            }
+            
+            container.innerHTML = `
+                <table class="recording-table">
+                    <thead>
+                        <tr>
+                            <th>传感器名称</th>
+                            <th>区域名称</th>
+                            <th>录音时间段</th>
+                            <th>时长</th>
+                            <th>平均音量</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${recordings.map(rec => `
+                            <tr>
+                                <td><strong>${escapeHtml(rec.device_name)}</strong><br><span style="font-size:11px;color:#8C8C8C;">${rec.device_id}</span></td>
+                                <td>${escapeHtml(rec.area_level3)}</td>
+                                <td>${formatDateTime(rec.start_time)}<br><span style="font-size:11px;color:#8C8C8C;">至 ${formatTimeOnly(rec.end_time)}</span></td>
+                                <td>${formatDuration(rec.duration)}</td>
+                                <td>
+                                    <div style="display: flex; align-items: center;">
+                                        <div class="volume-mini-bar"><div style="width: ${Math.round(rec.avg_volume)}%; height: 100%; background: #52C41A;"></div></div>
+                                        <span>${Math.round(rec.avg_volume)}</span>
+                                    </div>
+                                 </td>
+                                <td><span class="status-tag ${rec.status}">${getStatusText(rec.status)}</span></td>
+                                <td>
+                                    <button class="recording-play-btn" onclick="playHistoryRecording('${rec.record_id}', '${escapeHtml(rec.device_name)}', '${rec.start_time}', ${rec.duration})">▶</button>
+                                    <button class="recording-download-btn" onclick="downloadRecording('${rec.record_id}')">📥</button>
+                                 </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
 
         function renderHistoryTimeline(segments, startTime, endTime) {
             const container = document.getElementById('historyTimelineView');
@@ -1518,7 +1456,6 @@
                     grouped[seg.device_id] = {
                         name: seg.device_name,
                         area: seg.area_level3,
-                        location: seg.area_level4,
                         segments: []
                     };
                 }
@@ -1542,7 +1479,7 @@
                                 <div class="timeline-row">
                                     <div class="timeline-device-header">
                                         <strong class="timeline-device-name">${escapeHtml(group.name)}</strong>
-                                        <span style="font-size: 11px; color: #8C8C8C;">${group.area} · ${group.location}</span>
+                                        <span style="font-size: 11px; color: #8C8C8C;">${group.area}</span>
                                         <span style="font-size: 11px; color: #8C8C8C; margin-left: auto;">${sorted.length}个有声音片段</span>
                                     </div>
                                     <div class="timeline-bar-container">
@@ -1915,21 +1852,20 @@
         function renderBindings(bindings) {
             const tbody = document.getElementById('bindingListBody');
             if (!bindings.length) {
-                tbody.innerHTML = '<tr><td colspan="4" class="empty-state">暂无绑定数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="3" class="empty-state">暂无绑定数据</td></tr>';
                 return;
             }
             
             tbody.innerHTML = bindings.map(binding => {
-                const deviceTags = binding.device_names.map(name => 
+                const deviceTags = binding.device_names.map((name, idx) => 
                     `<span class="binding-device-tag">
                         ${escapeHtml(name)}
-                        <span class="remove-device" onclick="event.stopPropagation(); removeSingleDevice('${binding.id}', '${binding.device_ids[binding.device_names.indexOf(name)]}', '${escapeHtml(name)}')">✕</span>
+                        <span class="remove-device" onclick="event.stopPropagation(); removeSingleDevice('${binding.id}', '${binding.device_ids[idx]}', '${escapeHtml(name)}')">✕</span>
                     </span>`
                 ).join('');
                 return `
                     <tr>
                         <td style="padding: 12px;"><strong>${binding.level3}</strong></td>
-                        <td>${binding.level4}</td>
                         <td>${deviceTags || '-'}</td>
                         <td>
                             <button class="unbind-btn" onclick="unbindBinding('${binding.id}')">全部解绑</button>
