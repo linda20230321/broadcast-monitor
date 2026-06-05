@@ -6,8 +6,6 @@
 from flask import Flask, render_template, send_file, jsonify, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
-import pyaudio
-import wave
 import threading
 import time
 import os
