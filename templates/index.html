@@ -942,7 +942,7 @@
                             </tr>
                         </thead>
                         <tbody id="bindingListBody">
-                            <tr><td colspan="3" class="empty-state">暂无绑定数据</td>\n                            </tr>
+                            <tr><td colspan="3" class="empty-state">暂无绑定数据</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1268,69 +1268,101 @@
             }
         }
 
-        async function unbindBinding(bindingId) {
-            if (!confirm('确定要解除该区域的所有绑定吗？')) return;
+async function unbindBinding(bindingId) {
+    if (!bindingId) {
+        console.error('bindingId为空');
+        alert('参数错误，无法解绑');
+        return;
+    }
+    
+    if (!confirm('确定要解除该区域的所有绑定吗？')) return;
+    
+    try {
+        console.log('正在解绑，bindingId:', bindingId);
+        
+        const response = await fetch(`/api/area/bindings/${bindingId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        console.log('解绑响应:', result);
+        
+        if (result.success) {
+            alert('解绑成功');
             
-            try {
-                const response = await fetch(`/api/area/bindings/${bindingId}`, {
-                    method: 'DELETE'
-                });
-                
-                const result = await response.json();
-                if (result.success) {
-                    alert('解绑成功');
-                    loadBindings();
-                    loadDevices();
-                    if (currentBindLevel3) {
-                        loadUnboundDevices();
-                        checkExistingBinding();
-                    }
-                } else {
-                    alert('解绑失败：' + (result.error || '未知错误'));
-                }
-            } catch (error) {
-                console.error('解绑失败:', error);
-                alert('解绑失败，请检查网络');
+            // 只刷新绑定列表和设备列表
+            await loadBindings();
+            await loadDevices();
+            
+            // 重置当前选中的区域状态
+            if (currentBindLevel3) {
+                document.getElementById('bindLevel3').value = '';
+                document.getElementById('unboundDeviceList').innerHTML = '<div class="empty-state">请先选择区域名称</div>';
+                document.getElementById('bindBtn').disabled = true;
+                document.getElementById('selectAllBtn').disabled = true;
+                document.getElementById('currentBindingInfo').style.display = 'none';
+                currentBindLevel3 = '';
+                selectedUnboundDevices.clear();
+            }
+        } else {
+            alert('解绑失败：' + (result.error || '未知错误'));
+        }
+    } catch (error) {
+        console.error('解绑失败:', error);
+        // 不弹alert，因为可能已经成功了
+        // 静默处理，只刷新数据
+        await loadBindings();
+        await loadDevices();
+    }
+}
+
+async function removeSingleDevice(deviceId, deviceName) {
+    if (!confirm(`确定要将传感器 "${deviceName}" 从该区域移除吗？`)) return;
+    
+    try {
+        // 找到包含该设备的绑定记录
+        let targetBinding = null;
+        for (let binding of areaBindings) {
+            if (binding.device_ids.includes(deviceId)) {
+                targetBinding = binding;
+                break;
             }
         }
-
-        async function removeSingleDevice(bindingId, deviceId, deviceName) {
-            if (!confirm(`确定要将传感器 "${deviceName}" 从该区域移除吗？`)) return;
-            
-            try {
-                const binding = areaBindings.find(b => b.id === bindingId);
-                if (!binding) return;
-                
-                const newDeviceIds = binding.device_ids.filter(id => id !== deviceId);
-                
-                const response = await fetch('/api/area/bind', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        level3: binding.level3,
-                        level4: '',
-                        device_ids: newDeviceIds
-                    })
-                });
-                
-                const result = await response.json();
-                if (result.success) {
-                    alert(`已移除传感器 "${deviceName}"`);
-                    loadBindings();
-                    loadDevices();
-                    if (currentBindLevel3 === binding.level3) {
-                        loadUnboundDevices();
-                        checkExistingBinding();
-                    }
-                } else {
-                    alert('移除失败：' + (result.error || '未知错误'));
-                }
-            } catch (error) {
-                console.error('移除失败:', error);
-                alert('移除失败，请检查网络');
-            }
+        
+        if (!targetBinding) {
+            alert('未找到该传感器的绑定记录');
+            return;
         }
-
+        
+        const newDeviceIds = targetBinding.device_ids.filter(id => id !== deviceId);
+        
+        const response = await fetch('/api/area/bind', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                level3: targetBinding.level3,
+                level4: '',
+                device_ids: newDeviceIds
+            })
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            alert(`已移除传感器 "${deviceName}"`);
+            await loadBindings();
+            await loadUnboundAreas();
+            await loadDevices();
+        } else {
+            alert('移除失败：' + (result.error || '未知错误'));
+        }
+    } catch (error) {
+        console.error('移除失败:', error);
+        alert('移除失败，请检查网络');
+    }
+}
         function resetSearch() {
             const now = new Date();
             const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -1849,31 +1881,67 @@
             }
         }
 
-        function renderBindings(bindings) {
-            const tbody = document.getElementById('bindingListBody');
-            if (!bindings.length) {
-                tbody.innerHTML = '<tr><td colspan="3" class="empty-state">暂无绑定数据</td></tr>';
-                return;
+async function loadUnboundAreas() {
+    try {
+        const response = await fetch('/api/area/bindings');
+        const result = await response.json();
+        if (result.success) {
+            const boundLevel3 = new Set(result.data.map(b => b.level3));
+            // allAreas 需要从区域层级中获取
+            const allAreas = [];
+            if (areaHierarchy['重庆东站']) {
+                for (let level2 in areaHierarchy['重庆东站']) {
+                    for (let level3 in areaHierarchy['重庆东站'][level2]) {
+                        allAreas.push(level3);
+                    }
+                }
             }
-            
-            tbody.innerHTML = bindings.map(binding => {
-                const deviceTags = binding.device_names.map((name, idx) => 
-                    `<span class="binding-device-tag">
-                        ${escapeHtml(name)}
-                        <span class="remove-device" onclick="event.stopPropagation(); removeSingleDevice('${binding.id}', '${binding.device_ids[idx]}', '${escapeHtml(name)}')">✕</span>
-                    </span>`
-                ).join('');
-                return `
-                    <tr>
-                        <td style="padding: 12px;"><strong>${binding.level3}</strong></td>
-                        <td>${deviceTags || '-'}</td>
-                        <td>
-                            <button class="unbind-btn" onclick="unbindBinding('${binding.id}')">全部解绑</button>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
+            const unboundAreas = allAreas.filter(area => !boundLevel3.has(area));
+            // 更新左侧未绑定区域列表
+            const areaListContainer = document.getElementById('unboundAreaList');
+            if (areaListContainer) {
+                if (!unboundAreas.length) {
+                    areaListContainer.innerHTML = '<div class="empty-state" style="padding: 40px;">🎉 所有区域都已绑定传感器</div>';
+                } else {
+                    areaListContainer.innerHTML = unboundAreas.map(area => `
+                        <div class="area-list-item" data-area="${area}" onclick="selectArea('${area}')">
+                            <span class="area-name-text">📍 ${area}</span>
+                            <span class="area-badge">待绑定</span>
+                        </div>
+                    `).join('');
+                }
+            }
         }
+    } catch (error) {
+        console.error('加载未绑定区域失败:', error);
+    }
+}
+
+function renderBindings(bindings) {
+    const tbody = document.getElementById('bindingListBody');
+    if (!bindings.length) {
+        tbody.innerHTML = '<tr><td colspan="3" class="empty-state">暂无绑定数据</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = bindings.map(binding => {
+        const deviceTags = binding.device_names.map((name, idx) => 
+            `<span class="binding-device-tag">
+                ${escapeHtml(name)}
+                <span class="remove-device" onclick="event.stopPropagation(); removeSingleDevice('${binding.device_ids[idx]}', '${escapeHtml(name)}')">✕</span>
+            </span>`
+        ).join('');
+        return `
+            <tr>
+                <td style="padding: 12px;"><strong>${binding.level3}</strong></td>
+                <td>${deviceTags || '-'}</td>
+                <td>
+                    <button class="unbind-btn" onclick="unbindBinding('${binding.id}')">全部解绑</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
 
         function playHistoryRecording(recordId, deviceName, startTime, duration) {
             document.getElementById('playingDeviceName').innerHTML = deviceName;
