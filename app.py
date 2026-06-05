@@ -7,14 +7,14 @@ from flask import Flask, render_template, send_file, jsonify, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 
-# 解决pyaudio导入问题 - 在云服务器上可能没有pyaudio
+# 解决pyaudio部署问题 - 在云服务器上可能没有pyaudio
 try:
     import pyaudio
     PYAVAILABLE = True
 except ImportError:
     PYAVAILABLE = False
     print("警告: pyaudio未安装，将使用模拟模式")
-    # 创建一个虚拟的pyaudio模块
+    # 创建虚拟的pyaudio模块避免后续引用错误
     class MockPaInt16:
         pass
     
@@ -47,6 +47,7 @@ import random
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 from enum import Enum
+
 
 # 配置日志
 logging.basicConfig(
@@ -165,19 +166,19 @@ class AudioMonitorSystem:
             with open(config_file, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=4, ensure_ascii=False)
 
-    def init_pyaudio(self):
-        """初始化PyAudio"""
-        if not PYAVAILABLE:
-            logger.warning("PyAudio不可用，将使用模拟模式")
-            self.p = None
-            return
-            
-        try:
-            self.p = pyaudio.PyAudio()
-            logger.info("PyAudio初始化成功")
-        except Exception as e:
-            logger.warning(f"PyAudio初始化失败: {e}，将使用模拟数据")
-            self.p = None
+def init_pyaudio(self):
+    """初始化PyAudio"""
+    if not PYAVAILABLE:
+        logger.warning("PyAudio不可用，将使用模拟模式")
+        self.p = None
+        return
+        
+    try:
+        self.p = pyaudio.PyAudio()
+        logger.info("PyAudio初始化成功")
+    except Exception as e:
+        logger.warning(f"PyAudio初始化失败: {e}，将使用模拟数据")
+        self.p = None
 
     def init_database(self):
         """初始化数据库"""
@@ -526,44 +527,44 @@ class AudioMonitorSystem:
         """获取区域层级"""
         return self.area_data
 
-   def get_area_bindings(self) -> List[Dict]:
-    """获取区域绑定列表 - 按level3合并，一个区域只显示一行"""
-    # 先按 level3 分组
-    grouped_bindings = {}
-    
-    for binding in self.area_bindings.values():
-        level3 = binding.level3
-        
-        if level3 not in grouped_bindings:
-            grouped_bindings[level3] = {
-                'level1': binding.level1,
-                'level2': binding.level2,
+    def get_area_bindings(self) -> List[Dict]:
+        """获取区域绑定列表 - 按level3合并，一个区域只显示一行"""
+        # 先按 level3 分组
+        grouped_bindings = {}
+
+        for binding in self.area_bindings.values():
+            level3 = binding.level3
+
+            if level3 not in grouped_bindings:
+                grouped_bindings[level3] = {
+                    'level1': binding.level1,
+                    'level2': binding.level2,
+                    'level3': level3,
+                    'all_device_ids': [],
+                    'all_device_names': []
+                }
+
+            # 合并该 level3 下所有 level4 的设备
+            for device_id in binding.device_ids:
+                if device_id not in grouped_bindings[level3]['all_device_ids']:
+                    grouped_bindings[level3]['all_device_ids'].append(device_id)
+                    if device_id in self.devices:
+                        grouped_bindings[level3]['all_device_names'].append(self.devices[device_id].name)
+
+        # 转换为列表返回
+        bindings = []
+        for level3, data in grouped_bindings.items():
+            bindings.append({
+                'id': f"BIND_{data['level1']}_{data['level2']}_{level3}".replace(" ", "_"),
+                'level1': data['level1'],
+                'level2': data['level2'],
                 'level3': level3,
-                'all_device_ids': [],
-                'all_device_names': []
-            }
-        
-        # 合并该 level3 下所有 level4 的设备
-        for device_id in binding.device_ids:
-            if device_id not in grouped_bindings[level3]['all_device_ids']:
-                grouped_bindings[level3]['all_device_ids'].append(device_id)
-                if device_id in self.devices:
-                    grouped_bindings[level3]['all_device_names'].append(self.devices[device_id].name)
-    
-    # 转换为列表返回
-    bindings = []
-    for level3, data in grouped_bindings.items():
-        bindings.append({
-            'id': f"BIND_{data['level1']}_{data['level2']}_{level3}".replace(" ", "_"),
-            'level1': data['level1'],
-            'level2': data['level2'],
-            'level3': level3,
-            'device_ids': data['all_device_ids'],
-            'device_names': data['all_device_names'],
-            'device_count': len(data['all_device_ids'])
-        })
-    
-    return bindings
+                'device_ids': data['all_device_ids'],
+                'device_names': data['all_device_names'],
+                'device_count': len(data['all_device_ids'])
+            })
+
+        return bindings
 
     def get_devices_by_area(self, level3: str = None, level4: str = None) -> List[Dict]:
         """根据区域获取拾音器列表"""
@@ -717,75 +718,89 @@ class AudioMonitorSystem:
             logger.error(f"查询录音片段失败: {e}")
             return []
 
-   def bind_area_device(self, level3: str, level4: str, device_ids: List[str]) -> bool:
-    """绑定区域和拾音器 - 按level3存储，合并同一level3下的所有设备"""
-    try:
-        station = "重庆东站"
-        # 找到对应的level2
-        level2 = None
-        for l2, l3_map in self.area_data[station].items():
-            if level3 in l3_map:
-                level2 = l2
-                break
+    def bind_area_device(self, level3: str, level4: str, device_ids: List[str]) -> bool:
+        """绑定区域和拾音器 - 按level3存储，合并同一level3下的所有设备"""
+        try:
+            station = "重庆东站"
+            # 找到对应的level2
+            level2 = None
+            for l2, l3_map in self.area_data[station].items():
+                if level3 in l3_map:
+                    level2 = l2
+                    break
 
-        if not level2:
-            logger.error(f"未找到区域: {level3}")
+            if not level2:
+                logger.error(f"未找到区域: {level3}")
+                return False
+
+            # 获取该 level3 下已有的所有设备
+            existing_device_ids = []
+            for binding in self.area_bindings.values():
+                if binding.level3 == level3:
+                    existing_device_ids.extend(binding.device_ids)
+
+            # 合并新旧设备（去重）
+            all_device_ids = list(set(existing_device_ids + device_ids))
+
+            # 使用一个统一的 binding_id（基于 level3）
+            binding_id = f"BIND_{station}_{level2}_{level3}".replace(" ", "_")
+
+            # 删除该 level3 下的所有旧绑定
+            to_delete = [bid for bid, b in self.area_bindings.items() if b.level3 == level3]
+            for bid in to_delete:
+                del self.area_bindings[bid]
+                self.cursor.execute('DELETE FROM area_bindings WHERE id = ?', (bid,))
+
+            # 创建新的绑定记录（合并所有设备）
+            binding = AreaBinding(
+                id=binding_id,
+                level1=station,
+                level2=level2,
+                level3=level3,
+                level4='',  # level4 设为空，表示整个区域
+                device_ids=all_device_ids
+            )
+            self.area_bindings[binding_id] = binding
+
+            self.cursor.execute('''
+                INSERT OR REPLACE INTO area_bindings 
+                (id, level1, level2, level3, level4, device_ids)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (binding_id, station, level2, level3, '', json.dumps(all_device_ids)))
+
+            self.conn.commit()
+            logger.info(f"绑定成功: {level3}, 共 {len(all_device_ids)} 个设备")
+            return True
+        except Exception as e:
+            logger.error(f"绑定失败: {e}")
             return False
 
-        # 获取该 level3 下已有的所有设备
-        existing_device_ids = []
-        for binding in self.area_bindings.values():
-            if binding.level3 == level3:
-                existing_device_ids.extend(binding.device_ids)
-        
-        # 合并新旧设备（去重）
-        all_device_ids = list(set(existing_device_ids + device_ids))
-        
-        # 使用一个统一的 binding_id（基于 level3）
-        binding_id = f"BIND_{station}_{level2}_{level3}".replace(" ", "_")
-        
-        # 删除该 level3 下的所有旧绑定
-        to_delete = [bid for bid, b in self.area_bindings.items() if b.level3 == level3]
-        for bid in to_delete:
-            del self.area_bindings[bid]
-            self.cursor.execute('DELETE FROM area_bindings WHERE id = ?', (bid,))
-        
-        # 创建新的绑定记录（合并所有设备）
-        binding = AreaBinding(
-            id=binding_id,
-            level1=station,
-            level2=level2,
-            level3=level3,
-            level4='',  # level4 设为空，表示整个区域
-            device_ids=all_device_ids
-        )
-        self.area_bindings[binding_id] = binding
-
-        self.cursor.execute('''
-            INSERT OR REPLACE INTO area_bindings 
-            (id, level1, level2, level3, level4, device_ids)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (binding_id, station, level2, level3, '', json.dumps(all_device_ids)))
-        
-        self.conn.commit()
-        logger.info(f"绑定成功: {level3}, 共 {len(all_device_ids)} 个设备")
-        return True
-    except Exception as e:
-        logger.error(f"绑定失败: {e}")
-        return False
-
     def unbind_area_device(self, binding_id: str) -> bool:
-        """解除区域绑定"""
+        """解除区域绑定 - 根据level3删除"""
         try:
-            # 从数据库中删除
-            self.cursor.execute('DELETE FROM area_bindings WHERE id = ?', (binding_id,))
+            logger.info(f"执行解绑: {binding_id}")
+
+            # 从 binding_id 中提取 level3
+            # binding_id 格式: BIND_重庆东站_候车室_A区检票口
+            parts = binding_id.split('_')
+            if len(parts) >= 4:
+                level3 = parts[3]  # 获取区域名称
+            else:
+                # 兼容旧格式
+                level3 = binding_id
+
+            logger.info(f"提取的区域名称: {level3}")
+
+            # 删除该 level3 下的所有绑定
+            to_delete = [bid for bid, b in self.area_bindings.items() if b.level3 == level3]
+
+            for bid in to_delete:
+                del self.area_bindings[bid]
+                self.cursor.execute('DELETE FROM area_bindings WHERE id = ?', (bid,))
+
             self.conn.commit()
 
-            # 从内存中删除
-            if binding_id in self.area_bindings:
-                del self.area_bindings[binding_id]
-
-            logger.info(f"解绑成功: {binding_id}")
+            logger.info(f"解绑成功: {level3}, 删除了 {len(to_delete)} 条记录")
             return True
         except Exception as e:
             logger.error(f"解绑失败: {e}")
